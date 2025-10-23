@@ -1,0 +1,37 @@
+
+
+/* Global tokens */
+:root {
+    --fc-accent: #279CF5;          /* buttons/active indicators */
+    --fc-border: #e5e7eb;          /* light borders */
+    --fc-badge: #f3f4f6;           /* badge background */
+    --fc-title: #F76B14;           /* event title text */
+    --fc-muted: #F76B14;           /* secondary text */
+    --fc-card-bg: #279CF5;
+    --fc-card-shadow: 0 8px 20px rgba(0,0,0,.06);
+}
+
+/* FullCalendar CSS variables */
+.fc .fc-toolbar-title { font-weight: 700; letter-spacing: .2px; }
+.fc .fc-button { border-radius: 10px; padding: 6px 10px; }
+.fc .fc-button-primary { background: var(--fc-accent); border: none; }
+.fc .fc-button-primary:not(:disabled):hover { filter: brightness(0.92); }
+.fc-theme-standard td, .fc-theme-standard th { border-color: var(--fc-border); }
+
+/* Event card  */
+.fc .fc-event {
+    border: 1px solid var(--fc-border);
+    background: var(--fc-card-bg);
+    border-radius: 10px;
+    box-shadow: var(--fc-card-shadow);
+    overflow: hidden;
+    padding: 4px 6px;
+}
+
+
+/*event description */
+.event-desc {
+    color: var(--fc-muted);
+    font-size: 11px;
+    margin-top: 2px;
+}
