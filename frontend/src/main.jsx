@@ -1,4 +1,3 @@
-// Entry: render Welcome page at root
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";

@@ -30,6 +30,12 @@ export default function Home() {
   const navigate = useNavigate();
   const calendarRef = useRef(null);
 
+  // redirects immediately if no token exists
+  const token = localStorage.getItem("token");
+  useEffect(()=>{
+    if(!token) navigate("/login");
+  }, [token, navigate]);
+
   // load my classes on mount
   useEffect(() => {
     (async () => {
@@ -188,7 +194,11 @@ export default function Home() {
                 color="error"
                 onClick={() => {
                   localStorage.removeItem("token");
-                  navigate("/login");
+                  // clear the selection so next user starts empty (just in case)
+                  setClasses([]);
+                  setSelectedIds([]);
+                  calendarRef.current?.getApi()?.removeItem();
+                  setTimeout(() => navigate("/login"), 100); //short delay to ensure redirect
                 }}
               >
                 Log out
@@ -220,4 +230,4 @@ export default function Home() {
       </Grid>
     </Container>
   );
-}
+}//fml idk why some events stay in the calendar between users
