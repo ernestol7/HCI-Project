@@ -1,75 +1,118 @@
 import express from "express";
-//import auth from "../middleware/auth.js";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import auth from "../middleware/auth.js";
 import Event from "../models/Event.js";
-import User from "../models/User.js";
+
 const router = express.Router();
 
-//router.use(auth);
-//router.get("/", listEvents);
+// Helper: parse FullCalendar range
 function parseRange(req) {
-    const { start, end } = req.query; // FullCalendar sends these in ISO
-    const startDate = start ? new Date(start) : null;
-    const endDate   = end   ? new Date(end)   : null;
-    return { startDate, endDate };
+  const { start, end } = req.query; // ISO strings
+  const startDate = start ? new Date(start) : null;
+  const endDate = end ? new Date(end) : null;
+  return { startDate, endDate };
 }
 
-router.get("/", async (req, res) => {
-    try {
-        const { startDate, endDate } = parseRange(req);
-        const query = {};
-        if (startDate && endDate) {
-            // overlap test: event.start < end && (event.end || event.start) > start
-            query.$and = [
-                { start: { $lt: endDate } },
-                { $or: [{ end: { $gt: startDate } }, { end: { $exists: false } }, { end: null }, { start: { $gt: startDate } }] }
-            ];
-        }
-        const events = await Event.find(query).sort({ start: 1 }).lean();
-        // Return in a shape FullCalendar understands directly
-        res.json(events.map(e => ({
-            id: String(e._id),
-            title: e.title,
-            start: e.start,
-            end: e.end || null,
-            allDay: !!e.allDay,
-            extendedProps: {
-                description: e.description || "",
-            },
-            color: e.color || undefined,
-        })));
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to load events" });
+// List events for given classes (supports one or many classIds)
+router.get("/", auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = parseRange(req);
+    const { classIds, classId } = req.query; // either `classId=...` or `classIds=a,b,c`
+
+    let filter = {};
+    // class filter
+    const ids = classIds ? classIds.split(",").filter(Boolean) : (classId ? [classId] : []);
+    if (ids.length) filter.classId = { $in: ids };
+
+    // range overlap
+    if (startDate && endDate) {
+      filter.$and = [
+        { start: { $lt: endDate } },
+        { $or: [{ end: { $gt: startDate } }, { end: { $exists: false } }, { end: null }, { start: { $gte: startDate } }] },
+      ];
     }
+
+    const events = await Event.find(filter).sort({ start: 1 }).lean();
+
+    res.json(
+      events.map((e) => ({
+        id: String(e._id),
+        title: e.title,
+        start: e.start,
+        end: e.end || null,
+        allDay: !!e.allDay,
+        extendedProps: {
+          description: e.description || "",
+          time: e.time || "",
+          capacity: e.capacity || 0,
+          classId: e.classId,
+          attendeesCount: (e.participants || []).length,
+        },
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load events" });
+  }
 });
 
-router.post("/", async (req, res) => {
-    try {
-        const { title, start, description, time, createdBy, capacity, participants } = req.body;
+// Create event (class scoped)
+router.post("/", auth, async (req, res) => {
+  try {
+    const { title, start, end, description, time, capacity, classId } = req.body;
+    if (!title || !start || !classId) return res.status(400).json({ message: "title, start, classId required" });
 
-        const event = await Event.create({
-            title,
-            start: new Date(start),
-            description,
-            time: time || "",
-            capacity: Number(capacity) || 0,
-            createdBy: req.user.id,
-            participants: [req.user.id]
-        })
+    const evt = await Event.create({
+      title: title.trim(),
+      description: (description || "").trim(),
+      start: new Date(start),
+      end: end ? new Date(end) : undefined,
+      allDay: !time, // crude rule; adjust as you like
+      time: time || "",
+      capacity: Number.isFinite(Number(capacity)) ? Number(capacity) : 0,
+      classId,
+      createdBy: req.user.id,
+      participants: [req.user.id], // auto-RSVP creator
+    });
 
-        res.status(201).json({ message: "Event Created Successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server error" });
-    }
+    res.status(201).json({ id: String(evt._id) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
+// RSVP: join
+router.post("/:id/join", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const evt = await Event.findByIdAndUpdate(
+      id,
+      { $addToSet: { participants: req.user.id } },
+      { new: true }
+    );
+    if (!evt) return res.status(404).json({ message: "Event not found" });
+    res.json({ attendeesCount: evt.participants.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
-/*
-router.patch("/:id", updateEvent);
-router.delete("/:id", deleteEvent);
-router.post("/:id/join", joinEvent);
-router.post("/:id/leave", leaveEvent);
-*/
+// RSVP: leave
+router.post("/:id/leave", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const evt = await Event.findByIdAndUpdate(
+      id,
+      { $pull: { participants: req.user.id } },
+      { new: true }
+    );
+    if (!evt) return res.status(404).json({ message: "Event not found" });
+    res.json({ attendeesCount: evt.participants.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 export default router;

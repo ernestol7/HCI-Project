@@ -14,7 +14,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-});
+   classes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Classroom" }],
+      // per-user hidden classes for toggle
+      hiddenClasses: [{ type: mongoose.Schema.Types.ObjectId, ref: "Classroom" }],
+},
+{timestamps : true});
 
-const User = mongoose.model("User", userSchema);
-export default User;
+export default mongoose.model("User", userSchema);

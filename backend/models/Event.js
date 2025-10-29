@@ -7,11 +7,19 @@ const EventSchema = new mongoose.Schema(
         description: {type: String, required: true, trim: true },
         time:   { type: String, required: true },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        // relationships
+        classId: { type: mongoose.Schema.Types.ObjectId, ref: "Classroom", required: true },
+        createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    
+        // RSVP
         capacity: { type: Number, default: 0 },
         participants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    },
-);
-
-EventSchema.index({ start: 1, end: 1 });
+      },
+      { timestamps: true }
+    );
+    
+    EventSchema.index({ classId: 1, start: 1 });
+    EventSchema.index({ start: 1, end: 1 });
+    
 
 export default mongoose.model("Event", EventSchema);
