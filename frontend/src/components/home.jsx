@@ -102,7 +102,8 @@ export default function Home() {
   const loadEvents = async (info, success, failure) => {
     try {
       const params = new URLSearchParams({ start: info.startStr, end: info.endStr });
-      if (selectedIds.length) params.set("classIds", selectedIds.join(","));
+      // always send classIds, even if empty
+      params.set("classIds", selectedIds.join(",")); //when no classes are toggled on
       const res = await authFetch(`/events?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to load events");
       const data = await res.json(); // [{id,title,start,...}]
@@ -197,7 +198,7 @@ export default function Home() {
                   // clear the selection so next user starts empty (just in case)
                   setClasses([]);
                   setSelectedIds([]);
-                  calendarRef.current?.getApi()?.removeItem();
+                  calendarRef.current?.getApi()?.removeAllEvents();
                   setTimeout(() => navigate("/login"), 100); //short delay to ensure redirect
                 }}
               >
@@ -220,7 +221,7 @@ export default function Home() {
                   center: "title",
                   right: "dayGridMonth,timeGridWeek,timeGridDay",
                 }}
-                height="70vh"
+                height="auto" //adjust calendar size
                 events={loadEvents}      // from backend
                 dateClick={handleDateClick}
               />

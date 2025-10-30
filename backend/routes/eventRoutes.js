@@ -31,6 +31,8 @@ router.get("/", auth, async (req, res) => {
     } else if (classId) {
       requested = [classId];
     }
+    // empty calendar request
+    if(typeof classIds === "string" && requested.length === 0) return res.json([]);
 
     let allowedIds;
     if (requested.length) {
@@ -57,7 +59,10 @@ router.get("/", auth, async (req, res) => {
       events.map((e) => ({
         id: String(e._id),
         title: e.title,
-        start: e.start,
+        //start: e.start, they're in different timezones
+        start: e.allDay
+            ? e.start.toISOString().slice(0, 10) // should be "2025-01-01"
+            : e.start,
         end: e.end || null,
         allDay: !!e.allDay,
         extendedProps: {
@@ -83,13 +88,13 @@ router.post("/", auth, async (req, res) => {
     //ensure current user is member of the class
     const membership = await ClassModel.exists({_id: classId, members: req.user.id});
     if(!membership) return res.status(403).json({message: "Not a member of this class"});
-    
+
     const evt = await Event.create({
       title: title.trim(),
       description: (description || "").trim(),
       start: new Date(start),
       end: end ? new Date(end) : undefined,
-      allDay: !time, // might have to adjust
+      allDay: true, 
       time: time || "",
       capacity: Number.isFinite(Number(capacity)) ? Number(capacity) : 0,
       classId,
