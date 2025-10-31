@@ -49,9 +49,12 @@ export default function Home() {
     time: "",
     capacity: "",
   });
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
 
   const navigate = useNavigate();
   const calendarRef = useRef(null);
+  const userId = String(localStorage.getItem("userId")); // if you store it at login
 
   // redirects immediately if no tokens exists
   const token = localStorage.getItem("token");
@@ -66,7 +69,18 @@ export default function Home() {
         const res = await authFetch("/classes/mine");
         if (!res.ok) throw new Error("Failed to load classes");
         const data = await res.json();
-        setClasses(data);
+success(
+  data.map((e) => ({
+    ...e,
+    extendedProps: {
+      ...e.extendedProps,
+      participants: e.extendedProps?.participants?.map(String) || [], // ADD THIS
+      attendeesCount: e.extendedProps?.attendeesCount || 0,
+      capacity: e.extendedProps?.capacity || 0,
+    },
+  }))
+);
+
         setSelectedIds(data.map((c) => c._id)); // default: show all
       } catch (e) {
         console.warn(e);
@@ -94,24 +108,30 @@ export default function Home() {
 
   // backend hookup for admin creating a class
   const handleAddClassToDB = async () => {
-    const adminPassword = window.prompt("Admin password");
-    if (!adminPassword) return;
-    const name = window.prompt("Class name");
-    if (!name) return;
-    try {
-      const res = await authFetch("/classes", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), adminPassword }),
-      });
-      if (!res.ok) return alert("Failed to create class (admin)");
-      const cls = await res.json(); // {_id,name,code}
-      alert(`Class '${cls.name}' created! Share code: ${cls.code}`);
-      setClasses((prev) => [...prev, cls]);
-      setSelectedIds((prev) => [...prev, cls._id]);
-    } catch (e) {
-      alert("Could not create class");
-    }
-  };
+  const adminPassword = window.prompt("Admin password");
+  if (!adminPassword) return;
+
+  const name = window.prompt("Class name");
+  if (!name) return;
+
+  const code = window.prompt("Enter a class code");
+  if (!code) return;
+
+  try {
+    const res = await authFetch("/classes", {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim(), code: code.trim(), adminPassword }),
+    });
+    if (!res.ok) return alert("Failed to create class (admin)");
+    const cls = await res.json(); // {_id,name,code}
+    alert(`Class '${cls.name}' created! Share code: ${cls.code}`);
+    setClasses((prev) => [...prev, cls]);
+    setSelectedIds((prev) => [...prev, cls._id]);
+  } catch (e) {
+    alert("Could not create class");
+  }
+};
+
 
   // toggle which classes are shown
   const toggleSelected = (id) => {
@@ -122,20 +142,40 @@ export default function Home() {
   };
 
   // FullCalendar event source
-  const loadEvents = async (info, success, failure) => {
-    try {
-      const params = new URLSearchParams({ start: info.startStr, end: info.endStr });
-      // always send classIds, even if empty
-      params.set("classIds", selectedIds.join(","));
-      const res = await authFetch(`/events?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to load events");
-      const data = await res.json();
-      success(data);
-    } catch (err) {
-      console.error(err);
-      failure(err);
-    }
-  };
+  // FullCalendar event source
+const loadEvents = async (info, success, failure) => {
+  try {
+    const params = new URLSearchParams({ start: info.startStr, end: info.endStr });
+    params.set("classIds", selectedIds.join(","));
+    const res = await authFetch(`/events?${params.toString()}`);
+    if (!res.ok) throw new Error("Failed to load events");
+    const data = await res.json();
+
+    // map data to FullCalendar format
+const events = data.map((e) => ({
+  id: e.id,
+  title: e.title,
+  start: e.start,
+  end: e.end || null,
+  allDay: !!e.allDay,
+  extendedProps: {
+    ...e.extendedProps, // copy everything from backend
+    capacity: e.extendedProps.capacity && e.extendedProps.capacity > 0
+      ? e.extendedProps.capacity
+      : "∞",
+    participants: (e.extendedProps.participants || []).map(String),
+    attendeesCount: e.extendedProps.attendeesCount || 0,
+  },
+}));
+
+
+    success(events);
+  } catch (err) {
+    console.error(err);
+    failure(err);
+  }
+};
+
 
   // create event for the first selected class using Dialog
   const handleDateClick = (arg) => {
@@ -186,6 +226,53 @@ export default function Home() {
       alert("Could not create event");
     }
   };
+
+  const handleJoinEvent = async (event) => {
+  if (!event) return;  // safe-guard
+  try {
+    const res = await authFetch(`/events/${event.id}/join`, { method: "POST" });
+    const data = await res.json();
+    setSelectedEvent((prev) => {
+      if (!prev) return prev;  // safe-guard
+      return {
+        ...prev,
+        extendedProps: {
+          ...prev.extendedProps,
+          participants: [...new Set([...(prev.extendedProps.participants || []), userId])],
+          attendeesCount: (prev.extendedProps.attendeesCount || 0) + 1, // +1 locally
+
+        },
+      };
+    });
+    calendarRef.current?.getApi().refetchEvents();
+  } catch (err) {
+    alert(err.message || "RSVP failed");
+  }
+};
+
+
+const handleLeaveEvent = async (eventId) => {
+  try {
+    const res = await authFetch(`/events/${eventId}/leave`, { method: "POST" });
+    const data = await res.json();
+    setSelectedEvent(prev => ({
+      ...prev,
+      extendedProps: {
+        ...prev.extendedProps,
+        participants: (prev.extendedProps.participants || []).filter(id => id !== userId),
+        attendeesCount: Math.max((prev.extendedProps.attendeesCount || 1) - 1, 0) // -1 locally
+
+      }
+    }));
+    calendarRef.current?.getApi().refetchEvents();
+  } catch (err) {
+    alert(err.message || "Leave failed");
+  }
+};
+
+  const isRegistered = selectedEvent?.extendedProps?.participants?.includes(userId);
+  const attendeesCount = selectedEvent?.extendedProps?.attendeesCount ?? 0; //CHANGE
+  const capacity = selectedEvent?.extendedProps?.capacity ?? "∞"; //CHANGE
 
   return (
     <Container maxWidth="lg" sx={{ mt: 3 }}>
@@ -260,6 +347,7 @@ export default function Home() {
                 height="auto"
                 events={loadEvents}
                 dateClick={handleDateClick}
+                eventClick={(info) => setSelectedEvent(info.event)}
               />
             </Box>
           </Card>
@@ -300,6 +388,58 @@ export default function Home() {
           <Button onClick={handleCreateEvent} variant="contained">
             Save
           </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={!!selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Event RSVP</DialogTitle>
+        <DialogContent sx={{ mt: 1 }}>
+          {selectedEvent && (
+            <>
+              <Typography variant="h6">{selectedEvent.title}</Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                Date: {selectedEvent.startStr}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                Description: {selectedEvent.extendedProps?.description || "No description"}
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedEvent(null)}>Close</Button>
+          {selectedEvent && (
+            <>
+              <Box sx={{ flexDirection: "column", textAlign: "left", width: "100%", mb: 1 }}>
+                <Typography variant="body2">Attendees: {attendeesCount} / {capacity || "∞"}</Typography>
+                <Typography variant="body2">
+                  {isRegistered ? "You are attending this event" : "You are not attending"}
+                </Typography>
+             </Box>
+              <Button
+                onClick={() => handleJoinEvent(selectedEvent)}
+                variant="contained"
+                color="primary"
+                disabled={isRegistered || (capacity && attendeesCount >= capacity)}
+
+              >
+                RSVP
+              </Button>
+              <Button
+                onClick={() => handleLeaveEvent(selectedEvent)}
+                variant="outlined"
+                color="error"
+                disabled={!isRegistered} 
+
+              >
+                Leave
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </Container>

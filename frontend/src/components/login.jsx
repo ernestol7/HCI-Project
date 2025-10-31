@@ -18,6 +18,7 @@ export default function Login() {
     try {
       const res = await api.post("/auth/login", formData);
       localStorage.setItem("token", res.data.token); // store JWT token
+      localStorage.setItem("userId", res.data.user.id);
       setMessage(`Welcome ${res.data.user.name}!`);
       navigate("/home"); // redirect to home page
     } catch (err) {

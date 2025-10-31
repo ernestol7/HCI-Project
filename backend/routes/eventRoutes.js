@@ -54,8 +54,11 @@ router.get("/", auth, async (req, res) => {
         { $or: [{ end: { $gt: startDate } }, { end: { $exists: false } }, { end: null }, { start: { $gte: startDate } }] },
       ];
     }
-    const events = await Event.find(filter).sort({ start: 1 }).lean();
-    res.json(
+  const events = await Event.find(filter)
+    .sort({ start: 1 })
+    .populate("participants", "_id name") 
+    .lean();    
+  res.json(
       events.map((e) => ({
         id: String(e._id),
         title: e.title,
@@ -70,7 +73,9 @@ router.get("/", auth, async (req, res) => {
           time: e.time || "",
           capacity: e.capacity || 0,
           classId: e.classId,
-          attendeesCount: (e.participants || []).length,
+          participants: (e.participants || []).map(p => String(p._id)), 
+          attendeesCount: (e.participants || []).length,               
+
         },
       }))
     );
@@ -96,7 +101,7 @@ router.post("/", auth, async (req, res) => {
       end: end ? new Date(end) : undefined,
       allDay: true, 
       time: time || "",
-      capacity: Number.isFinite(Number(capacity)) ? Number(capacity) : 0,
+capacity: Number.isFinite(Number(capacity)) && Number(capacity) > 0 ? Number(capacity) : undefined,
       classId,
       createdBy: req.user.id,
       participants: [req.user.id], // auto-RSVP creator

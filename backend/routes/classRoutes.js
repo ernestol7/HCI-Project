@@ -8,15 +8,32 @@ const router = express.Router();
 // Create a class (admin password required)
 router.post("/", auth, async (req, res) => {
   try {
-    const { name, adminPassword } = req.body;
-    if (!name || !adminPassword) return res.status(400).json({ message: "name and adminPassword required" });
-    if (adminPassword !== process.env.ADMIN_SECRET) return res.status(403).json({ message: "Invalid admin password" });
+    const { name, code, adminPassword } = req.body;
 
-    // generate a short unique code
-    const code = `CLS-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const cls = await ClassModel.create({ name, code, createdBy: req.user.id, members: [req.user.id] });
+    // validate input
+    if (!name || !code || !adminPassword) {
+      return res.status(400).json({ message: "name, code, and adminPassword required" });
+    }
 
-    // auto add creator to the class list
+    if (adminPassword !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ message: "Invalid admin password" });
+    }
+
+    // check uniqueness of the code
+    const existing = await ClassModel.findOne({ code: code.trim() });
+    if (existing) {
+      return res.status(400).json({ message: "Class code already exists" });
+    }
+
+    // create class
+    const cls = await ClassModel.create({
+      name: name.trim(),
+      code: code.trim(),
+      createdBy: req.user.id,
+      members: [req.user.id], // add creator automatically
+    });
+
+    // auto add creator to the user's class list
     await User.findByIdAndUpdate(req.user.id, { $addToSet: { classes: cls._id } });
 
     res.status(201).json({ _id: cls._id, name: cls.name, code: cls.code });
@@ -25,6 +42,7 @@ router.post("/", auth, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Join a class by code
 router.post("/join", auth, async (req, res) => {
