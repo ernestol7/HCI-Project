@@ -4,12 +4,25 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { Box, Button, Card, Stack, Typography, Container, Grid } from "@mui/material";
+import {
+  Box,
+  Button,
+  Card,
+  Stack,
+  Typography,
+  Container,
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+} from "@mui/material";
 import "@fullcalendar/daygrid";
 import "@fullcalendar/timegrid";
 import "../styles/calendar.css";
 
-// API helper 
+// API helper
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
 function authFetch(path, options = {}) {
   const token = localStorage.getItem("token");
@@ -25,15 +38,25 @@ function authFetch(path, options = {}) {
 }
 
 export default function Home() {
-  const [classes, setClasses] = useState([]);           // [{_id,name,code}]
-  const [selectedIds, setSelectedIds] = useState([]);   // which classIds are shown on calendar
+  const [classes, setClasses] = useState([]);   //[{_id,name,code}]
+  const [selectedIds, setSelectedIds] = useState([]); // which classIds are shown on calendar
+  // better event addition UI
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    dateStr: "",
+    title: "",
+    description: "",
+    time: "",
+    capacity: "",
+  });
+
   const navigate = useNavigate();
   const calendarRef = useRef(null);
 
-  // redirects immediately if no token exists
+  // redirects immediately if no tokens exists
   const token = localStorage.getItem("token");
-  useEffect(()=>{
-    if(!token) navigate("/login");
+  useEffect(() => {
+    if (!token) navigate("/login");
   }, [token, navigate]);
 
   // load my classes on mount
@@ -44,14 +67,14 @@ export default function Home() {
         if (!res.ok) throw new Error("Failed to load classes");
         const data = await res.json();
         setClasses(data);
-        setSelectedIds(data.map(c => c._id)); // default: show all
+        setSelectedIds(data.map((c) => c._id)); // default: show all
       } catch (e) {
         console.warn(e);
       }
     })();
   }, []);
 
-  // backend hookup for joining class by code 
+  // backend hookup for joining class by code
   const handleAddClass = async () => {
     const code = window.prompt("Enter class code");
     if (!code) return;
@@ -61,15 +84,15 @@ export default function Home() {
         body: JSON.stringify({ code: code.trim() }),
       });
       if (!res.ok) return alert("Invalid class code");
-      const cls = await res.json(); // {_id,name,code}
-      setClasses(prev => (prev.some(c => c._id === cls._id) ? prev : [...prev, cls]));
-      setSelectedIds(prev => (prev.includes(cls._id) ? prev : [...prev, cls._id]));
+      const cls = await res.json();
+      setClasses((prev) => (prev.some((c) => c._id === cls._id) ? prev : [...prev, cls]));
+      setSelectedIds((prev) => (prev.includes(cls._id) ? prev : [...prev, cls._id]));
     } catch (e) {
       alert("Could not join class");
     }
   };
 
-  // backend hookup for admin creating a class 
+  // backend hookup for admin creating a class
   const handleAddClassToDB = async () => {
     const adminPassword = window.prompt("Admin password");
     if (!adminPassword) return;
@@ -83,8 +106,8 @@ export default function Home() {
       if (!res.ok) return alert("Failed to create class (admin)");
       const cls = await res.json(); // {_id,name,code}
       alert(`Class '${cls.name}' created! Share code: ${cls.code}`);
-      setClasses(prev => [...prev, cls]);
-      setSelectedIds(prev => [...prev, cls._id]);
+      setClasses((prev) => [...prev, cls]);
+      setSelectedIds((prev) => [...prev, cls._id]);
     } catch (e) {
       alert("Could not create class");
     }
@@ -92,21 +115,21 @@ export default function Home() {
 
   // toggle which classes are shown
   const toggleSelected = (id) => {
-    setSelectedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-    // Refetch to reflect new selection
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    // Refetch to reflec new selection
     const api = calendarRef.current?.getApi();
     api?.refetchEvents();
   };
 
-  // FullCalendar async event 
+  // FullCalendar event source
   const loadEvents = async (info, success, failure) => {
     try {
       const params = new URLSearchParams({ start: info.startStr, end: info.endStr });
       // always send classIds, even if empty
-      params.set("classIds", selectedIds.join(",")); //when no classes are toggled on
+      params.set("classIds", selectedIds.join(","));
       const res = await authFetch(`/events?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to load events");
-      const data = await res.json(); // [{id,title,start,...}]
+      const data = await res.json();
       success(data);
     } catch (err) {
       console.error(err);
@@ -114,36 +137,52 @@ export default function Home() {
     }
   };
 
-  // create event for the first selected class 
-  const handleDateClick = async (arg) => {
+  // create event for the first selected class using Dialog
+  const handleDateClick = (arg) => {
     if (selectedIds.length === 0) {
       return alert("Select at least one class to add an event.");
     }
-    const classId = selectedIds[0]; // pick first selected; we could add a selector later
-    const title = window.prompt("Event title");
-    if (!title) return;
-    const description = window.prompt("Description");
-    const time = window.prompt("Time (optional, e.g., 7–9 PM)");
-    const capacityStr = window.prompt("Capacity (number, optional)");
-    const capacity = capacityStr ? Number(capacityStr) : undefined;
+    setEventForm({
+      dateStr: arg.dateStr, // "2025-10-31"
+      title: "",
+      description: "",
+      time: "",
+      capacity: "",
+    });
+    setEventDialogOpen(true);
+  };
+
+  // submit event
+  const handleCreateEvent = async () => {
+    const classId = selectedIds[0]; // maybe add a dropdown later
+    if (!eventForm.title.trim()) {
+      return alert("Title is required.");
+    }
 
     try {
       const res = await authFetch("/events", {
         method: "POST",
         body: JSON.stringify({
-          title: title.trim(),
-          start: arg.dateStr,
-          description: (description || "").trim(),
-          time: (time || "").trim(),
-          capacity,
+          title: eventForm.title.trim(),
+          // send date only to avoid timezone shift
+          start: eventForm.dateStr,
+          description: eventForm.description.trim(),
+          time: eventForm.time.trim(),
+          capacity: eventForm.capacity ? Number(eventForm.capacity) : undefined,
           classId,
         }),
       });
-      if (!res.ok) return alert("Failed to create event");
-      // Refresh events
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(text);
+        return alert("Failed to create event");
+      }
+
+      setEventDialogOpen(false);
       const api = calendarRef.current?.getApi();
       api?.refetchEvents();
     } catch (e) {
+      console.error(e);
       alert("Could not create event");
     }
   };
@@ -165,10 +204,7 @@ export default function Home() {
                 classes.map((c) => {
                   const checked = selectedIds.includes(c._id);
                   return (
-                    <Card
-                      key={c._id}
-                      sx={{ p: 1, display: "flex", alignItems: "center", gap: 1 }}
-                    >
+                    <Card key={c._id} sx={{ p: 1, display: "flex", alignItems: "center", gap: 1 }}>
                       <input
                         type="checkbox"
                         checked={checked}
@@ -199,7 +235,7 @@ export default function Home() {
                   setClasses([]);
                   setSelectedIds([]);
                   calendarRef.current?.getApi()?.removeAllEvents();
-                  setTimeout(() => navigate("/login"), 100); //short delay to ensure redirect
+                  setTimeout(() => navigate("/login"), 100);
                 }}
               >
                 Log out
@@ -221,14 +257,51 @@ export default function Home() {
                   center: "title",
                   right: "dayGridMonth,timeGridWeek,timeGridDay",
                 }}
-                height="auto" //adjust calendar size
-                events={loadEvents}      // from backend
+                height="auto"
+                events={loadEvents}
                 dateClick={handleDateClick}
               />
             </Box>
           </Card>
         </Grid>
       </Grid>
+
+      {/* Event Dialog */}
+      <Dialog open={eventDialogOpen} onClose={() => setEventDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Add event for {eventForm.dateStr}</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+          <TextField
+            label="Title"
+            value={eventForm.title}
+            onChange={(e) => setEventForm((f) => ({ ...f, title: e.target.value }))}
+            required
+          />
+          <TextField
+            label="Description"
+            value={eventForm.description}
+            onChange={(e) => setEventForm((f) => ({ ...f, description: e.target.value }))}
+            multiline
+            rows={2}
+          />
+          <TextField
+            label="Time (e.g. 7–9 PM)"
+            value={eventForm.time}
+            onChange={(e) => setEventForm((f) => ({ ...f, time: e.target.value }))}
+          />
+          <TextField
+            label="Capacity"
+            type="number"
+            value={eventForm.capacity}
+            onChange={(e) => setEventForm((f) => ({ ...f, capacity: e.target.value }))}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEventDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateEvent} variant="contained">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
-}//fml idk why some events stay in the calendar between users
+}// fml idk how to do RSVP
