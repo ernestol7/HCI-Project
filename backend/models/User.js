@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+// user accounts: basic profile info and class memberships and per-user hidden classes
 const userSchema = new mongoose.Schema({
   name: {
     type: String,

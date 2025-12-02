@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+// Study session and/or event data: timing, description, owning class, creator, and RSVP info
 const EventSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
