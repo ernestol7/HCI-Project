@@ -1,6 +1,6 @@
 # hci-proj-site
 
-A minimal Vite-powered website (vanilla JS).
+A minimal Vite-powered website (vanilla JS). Allows  students to create a join classes and set up study sessions with ease
 
 ## Requirements
 - Node.js 18+ and npm
