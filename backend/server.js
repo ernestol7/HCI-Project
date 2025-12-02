@@ -7,10 +7,12 @@ import eventRoutes from "./routes/eventRoutes.js";
 import classRoutes from "./routes/classRoutes.js";
 //app.use("/api/events", eventRoutes);
 
+// Load environment variables from backend/.env before anything else runs
 dotenv.config();
 await connectDB();
 
 const app = express();
+// Allow the React frontend to call this API and send credentials
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
